@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tensorflow as tf
 from tensorflow.keras import Sequential
-from tensorflow.keras.layers import Dense, Dropout, LSTM
+from tensorflow.keras.layers import Dense, Dropout, Input, LSTM
 from tensorflow.keras.optimizers import Adam
 
 
@@ -24,7 +24,8 @@ def build_lstm_model(input_shape: tuple[int, int]) -> tf.keras.Model:
     """
     model = Sequential(
         [
-            LSTM(50, return_sequences=True, input_shape=input_shape),
+            Input(shape=input_shape),
+            LSTM(50, return_sequences=True),
             Dropout(0.2),
             LSTM(50),
             Dropout(0.2),

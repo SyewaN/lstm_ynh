@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -104,7 +102,7 @@ def generate_synthetic_data(num_points: int = 8760, seed: int = 42) -> pd.DataFr
     temperature = temperature + rng.normal(0, 0.8, size=num_points)
 
     start = pd.Timestamp("2025-01-01 00:00:00")
-    timestamps = pd.date_range(start=start, periods=num_points, freq="H")
+    timestamps = pd.date_range(start=start, periods=num_points, freq="h")
 
     df = pd.DataFrame(
         {
@@ -130,7 +128,7 @@ def build_dataset_from_usgs(
         usgs_df = fetch_usgs_data(site_id=site_id, start_dt=start_dt, end_dt=end_dt)
 
         # USGS verisini saatlige indirger ve eksikleri lineer doldurur.
-        usgs_df = usgs_df.set_index("timestamp").resample("H").mean().interpolate("time").reset_index()
+        usgs_df = usgs_df.set_index("timestamp").resample("h").mean().interpolate("time").reset_index()
         usgs_df["tds"] = usgs_df["specific_conductance"] * 0.65
 
         # Gercek sicaklik API'den alinmadigi icin sentetik ama gercekci bir profil eklenir.

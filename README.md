@@ -76,6 +76,18 @@ Egitim sonunda `models/` klasorunde:
 - `training_history.png`
 - `predictions.png`
 - `metrics.txt` (RMSE, MAE, R2)
+- `metadata.json` (sequence length, feature kolonlari)
+- `scalers.pkl` (normalizasyon scaler'lari)
+
+## Tahmin Alma
+
+Egitimden sonra sonraki saat(ler) icin tahmin:
+
+```bash
+python src/predict.py --steps 1
+```
+
+Varsayilan cikti: `models/forecast.csv`
 
 ## Hata Yonetimi
 

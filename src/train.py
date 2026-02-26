@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import os
+import json
+import pickle
 from pathlib import Path
 from typing import Tuple
 
@@ -65,6 +66,28 @@ def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, floa
     mae = float(mean_absolute_error(y_true, y_pred))
     r2 = float(r2_score(y_true, y_pred))
     return rmse, mae, r2
+
+
+def save_inference_artifacts(
+    output_dir: Path,
+    sequence_length: int,
+    feature_columns: list[str],
+    target_column: str,
+    x_scaler: object,
+    y_scaler: object,
+) -> None:
+    """Tahmin asamasinda gerekli metadata ve scaler dosyalarini kaydeder."""
+    metadata = {
+        "sequence_length": sequence_length,
+        "feature_columns": feature_columns,
+        "target_column": target_column,
+        "specific_conductance_to_tds_ratio": 0.65,
+    }
+    with open(output_dir / "metadata.json", "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=True, indent=2)
+
+    with open(output_dir / "scalers.pkl", "wb") as f:
+        pickle.dump({"x_scaler": x_scaler, "y_scaler": y_scaler}, f)
 
 
 def main() -> None:
@@ -136,7 +159,19 @@ def main() -> None:
         f.write(f"R2: {r2:.4f}\n")
 
     save_training_plot(history=history, output_path=output_dir / "training_history.png")
-    save_predictions_plot(y_true=y_test_inv.flatten(), y_pred=y_pred_inv.flatten(), output_path=output_dir / "predictions.png")
+    save_predictions_plot(
+        y_true=y_test_inv.flatten(),
+        y_pred=y_pred_inv.flatten(),
+        output_path=output_dir / "predictions.png",
+    )
+    save_inference_artifacts(
+        output_dir=output_dir,
+        sequence_length=args.sequence_length,
+        feature_columns=feature_columns,
+        target_column=target_column,
+        x_scaler=scalers["x_scaler"],
+        y_scaler=scalers["y_scaler"],
+    )
 
     print("[OK] Egitim tamamlandi")
     print(f"[OK] Model: {checkpoint_path}")
