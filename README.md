@@ -57,6 +57,11 @@ python src/train.py --epochs 5
 
 - Sequence length: `24`
 - Split: `%70 train / %15 val / %15 test`
+- Varsayilan feature kolonlari (4 adet):
+  - `specific_conductance`
+  - `temperature`
+  - `weather_index`
+  - `soil_type_code`
 - Model:
   - `LSTM(50, return_sequences=True) + Dropout(0.2)`
   - `LSTM(50) + Dropout(0.2)`
@@ -88,6 +93,12 @@ python src/predict.py --steps 1
 ```
 
 Varsayilan cikti: `models/forecast.csv`
+
+Farkli ozellik seti ile egitmek istersen:
+
+```bash
+python src/train.py --feature-columns specific_conductance,temperature,weather_index,soil_type_code
+```
 
 ## Hata Yonetimi
 

@@ -85,7 +85,7 @@ def generate_synthetic_data(num_points: int = 8760, seed: int = 42) -> pd.DataFr
         seed: Tekrarlanabilirlik icin random seed.
 
     Returns:
-        timestamp, tds, specific_conductance, temperature kolonlarini iceren DataFrame.
+        timestamp, tds ve 4 ozellik kolonunu iceren DataFrame.
     """
     print("[WARN] USGS kullanilamadi, sentetik veri uretiliyor.")
     rng = np.random.default_rng(seed)
@@ -100,6 +100,8 @@ def generate_synthetic_data(num_points: int = 8760, seed: int = 42) -> pd.DataFr
     # Sicaklikta gunluk ve mevsimsel dalga + az miktar gurultu
     temperature = 18 + 8 * np.sin(2 * np.pi * t / 24) + 6 * np.sin(2 * np.pi * t / 8760)
     temperature = temperature + rng.normal(0, 0.8, size=num_points)
+    weather_index = 55 + 25 * np.sin(2 * np.pi * t / 168) + rng.normal(0, 2.0, size=num_points)
+    soil_type_code = np.full(num_points, 2.0, dtype=float)
 
     start = pd.Timestamp("2025-01-01 00:00:00")
     timestamps = pd.date_range(start=start, periods=num_points, freq="h")
@@ -109,6 +111,8 @@ def generate_synthetic_data(num_points: int = 8760, seed: int = 42) -> pd.DataFr
             "timestamp": timestamps,
             "specific_conductance": specific_conductance.astype(float),
             "temperature": temperature.astype(float),
+            "weather_index": weather_index.astype(float),
+            "soil_type_code": soil_type_code.astype(float),
             "tds": tds.astype(float),
             "data_source": "synthetic",
         }
@@ -134,11 +138,24 @@ def build_dataset_from_usgs(
         # Gercek sicaklik API'den alinmadigi icin sentetik ama gercekci bir profil eklenir.
         t = np.arange(len(usgs_df))
         temp = 18 + 8 * np.sin(2 * np.pi * t / 24) + np.random.default_rng(123).normal(0, 1.0, len(usgs_df))
+        weather_idx = 55 + 25 * np.sin(2 * np.pi * t / 168) + np.random.default_rng(456).normal(0, 2.0, len(usgs_df))
         usgs_df["temperature"] = temp
+        usgs_df["weather_index"] = weather_idx
+        usgs_df["soil_type_code"] = 2.0
         usgs_df["data_source"] = "usgs"
 
         print(f"[INFO] USGS tabanli veri seti hazir. satir={len(usgs_df)}")
-        return usgs_df[["timestamp", "specific_conductance", "temperature", "tds", "data_source"]]
+        return usgs_df[
+            [
+                "timestamp",
+                "specific_conductance",
+                "temperature",
+                "weather_index",
+                "soil_type_code",
+                "tds",
+                "data_source",
+            ]
+        ]
 
     except (requests.RequestException, RuntimeError, ValueError) as exc:
         print(f"[WARN] USGS veri cekimi basarisiz: {exc}")

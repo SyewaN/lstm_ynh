@@ -27,9 +27,9 @@ def load_dataset(csv_path: str) -> pd.DataFrame:
         raise FileNotFoundError(f"Veri dosyasi bulunamadi: {csv_path}")
 
     df = pd.read_csv(path)
-    missing = [col for col in REQUIRED_COLUMNS if col not in df.columns]
+    missing = [col for col in ["timestamp", "tds"] if col not in df.columns]
     if missing:
-        raise ValueError(f"Eksik kolon(lar): {missing}. Beklenen: {REQUIRED_COLUMNS}")
+        raise ValueError(f"Eksik kolon(lar): {missing}. Beklenen asgari: ['timestamp', 'tds']")
 
     if df.empty:
         raise ValueError("Veri dosyasi bos.")
@@ -38,7 +38,10 @@ def load_dataset(csv_path: str) -> pd.DataFrame:
     df = df.dropna(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
 
     # Sayisal kolonlardaki eksikler ileri/geri doldurma ile temizlenir.
-    num_cols = ["specific_conductance", "temperature", "tds"]
+    num_cols = [col for col in df.columns if col != "timestamp" and pd.api.types.is_numeric_dtype(df[col])]
+    if "tds" not in num_cols:
+        df["tds"] = pd.to_numeric(df["tds"], errors="coerce")
+        num_cols = [col for col in df.columns if col != "timestamp" and pd.api.types.is_numeric_dtype(df[col])]
     df[num_cols] = df[num_cols].apply(pd.to_numeric, errors="coerce")
     df[num_cols] = df[num_cols].interpolate("linear").bfill().ffill()
 

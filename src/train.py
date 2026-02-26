@@ -27,6 +27,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=50, help="Epoch sayisi")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument("--output-dir", type=str, default="models", help="Model cikti klasoru")
+    parser.add_argument(
+        "--feature-columns",
+        type=str,
+        default="specific_conductance,temperature,weather_index,soil_type_code",
+        help="Virgulle ayrilmis ozellik kolonlari",
+    )
     return parser.parse_args()
 
 
@@ -103,7 +109,10 @@ def main() -> None:
     print(f"[INFO] Veri yukleniyor: {args.data}")
     df = load_dataset(args.data)
 
-    feature_columns = ["specific_conductance", "temperature"]
+    feature_columns = [col.strip() for col in args.feature_columns.split(",") if col.strip()]
+    missing_features = [col for col in feature_columns if col not in df.columns]
+    if missing_features:
+        raise ValueError(f"Secilen feature kolonlari veride yok: {missing_features}. Veri kolonlari: {list(df.columns)}")
     target_column = "tds"
 
     print("[INFO] On-isleme basladi (normalizasyon + sliding window + split)")

@@ -59,7 +59,7 @@ def forecast_next_steps(
 
     history_features = df[feature_columns].astype(float).values.copy()
     last_timestamp = pd.to_datetime(df["timestamp"].iloc[-1])
-    last_temperature = float(df["temperature"].iloc[-1])
+    last_feature_values = {col: float(df[col].iloc[-1]) for col in feature_columns}
 
     rows: list[dict] = []
 
@@ -73,18 +73,19 @@ def forecast_next_steps(
         sc_pred = tds_pred / sc_to_tds_ratio
 
         last_timestamp = last_timestamp + pd.Timedelta(hours=1)
-        rows.append(
-            {
-                "timestamp": last_timestamp,
-                "predicted_tds": tds_pred,
-                "assumed_specific_conductance": sc_pred,
-                "assumed_temperature": last_temperature,
-            }
-        )
+        row = {"timestamp": last_timestamp, "predicted_tds": tds_pred}
 
-        # Gelecek adim icin ozellikler: tahmin edilen SC + son gozlenen sicaklik varsayimi.
-        next_features = np.array([sc_pred, last_temperature], dtype=np.float32)
+        next_feature_map = dict(last_feature_values)
+        if "specific_conductance" in next_feature_map:
+            next_feature_map["specific_conductance"] = sc_pred
+
+        for col, val in next_feature_map.items():
+            row[f"assumed_{col}"] = val
+        rows.append(row)
+
+        next_features = np.array([next_feature_map[col] for col in feature_columns], dtype=np.float32)
         history_features = np.vstack([history_features, next_features])
+        last_feature_values = next_feature_map
 
     return pd.DataFrame(rows)
 
@@ -103,7 +104,7 @@ def main() -> None:
     df = load_dataset(args.data)
 
     print(f"[INFO] Model yukleniyor: {model_path}")
-    model = tf.keras.models.load_model(model_path)
+    model = tf.keras.models.load_model(model_path, compile=False)
     metadata, x_scaler, y_scaler = load_artifacts(metadata_path, scalers_path)
 
     sequence_length = int(metadata["sequence_length"])
