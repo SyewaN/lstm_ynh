@@ -90,6 +90,34 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'node-api' });
 });
 
+app.get('/', (_req, res) => {
+  res.type('html').send(`<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ESP32 Monitor API</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; line-height: 1.5; color: #1a1a1a; }
+    h1 { margin-bottom: 8px; }
+    code { background: #f1f1f1; padding: 2px 6px; border-radius: 4px; }
+    ul { padding-left: 18px; }
+  </style>
+</head>
+<body>
+  <h1>ESP32 Monitor API</h1>
+  <p>Servis ayakta. API endpointleri API key ile korunmaktadir.</p>
+  <ul>
+    <li><code>GET /health</code> - Servis saglik durumu</li>
+    <li><code>POST /api/data</code> - Veri kaydet (x-api-key gerekli)</li>
+    <li><code>GET /api/data</code> - Son veriler (x-api-key gerekli)</li>
+    <li><code>GET /api/data/stats</code> - Istatistikler (x-api-key gerekli)</li>
+    <li><code>GET /api/predict</code> - Tahmin al (x-api-key gerekli)</li>
+  </ul>
+</body>
+</html>`);
+});
+
 app.use('/api', validateApiKey);
 
 app.post('/api/data', async (req, res) => {

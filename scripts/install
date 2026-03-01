@@ -3,7 +3,8 @@
 
 set -eu
 
-APP="esp32-monitor"
+APP="${YNH_APP_INSTANCE_NAME:-esp32-monitor}"
+APP_USER="${YNH_APP_INSTANCE_NAME:-esp32-monitor}"
 INSTALL_DIR="/var/www/${APP}"
 NODE_DIR="${INSTALL_DIR}/node-api"
 ML_DIR="${INSTALL_DIR}/ml-service"
@@ -11,7 +12,24 @@ PY_VENV="${ML_DIR}/.venv"
 DB_NAME="esp32_monitor"
 DB_USER="esp32_user"
 DB_PASS="esp32_pass"
+DOMAIN="${YNH_APP_ARG_DOMAIN:-${domain:-}}"
+APP_PATH="${YNH_APP_ARG_PATH:-${path:-/}}"
 APP_SRC_DIR="${YNH_APP_BASEDIR:-/var/cache/yunohost/app_tmp}"
+NODE_PORT="3000"
+ML_PORT="5000"
+
+if [ -z "${DOMAIN}" ]; then
+  echo "HATA: domain bilgisi bos geldi."
+  exit 1
+fi
+
+if [[ "${APP_PATH}" != /* ]]; then
+  APP_PATH="/${APP_PATH}"
+fi
+
+if [ "${APP_PATH}" != "/" ]; then
+  APP_PATH="${APP_PATH%/}"
+fi
 
 mkdir -p "${INSTALL_DIR}"
 
@@ -41,7 +59,9 @@ python3 -m venv "${PY_VENV}"
 "${PY_VENV}/bin/pip" install --upgrade pip
 "${PY_VENV}/bin/pip" install -r requirements.txt
 
-cat > /etc/systemd/system/${APP}-node.service <<SERVICE
+chown -R "${APP_USER}:${APP_USER}" "${INSTALL_DIR}"
+
+cat > "/etc/systemd/system/${APP}-node.service" <<SERVICE
 [Unit]
 Description=${APP} Node API Service
 After=network.target mariadb.service mysql.service
@@ -53,14 +73,14 @@ EnvironmentFile=${NODE_DIR}/.env
 ExecStart=/usr/bin/node ${NODE_DIR}/server.js
 Restart=always
 RestartSec=3
-User=www-data
-Group=www-data
+User=${APP_USER}
+Group=${APP_USER}
 
 [Install]
 WantedBy=multi-user.target
 SERVICE
 
-cat > /etc/systemd/system/${APP}-ml.service <<SERVICE
+cat > "/etc/systemd/system/${APP}-ml.service" <<SERVICE
 [Unit]
 Description=${APP} Flask ML Service
 After=network.target mariadb.service mysql.service
@@ -72,35 +92,49 @@ EnvironmentFile=${NODE_DIR}/.env
 ExecStart=${PY_VENV}/bin/python ${ML_DIR}/app.py
 Restart=always
 RestartSec=3
-User=www-data
-Group=www-data
+User=${APP_USER}
+Group=${APP_USER}
 
 [Install]
 WantedBy=multi-user.target
 SERVICE
 
-cat > /etc/nginx/conf.d/${APP}.conf <<NGINX
-server {
-    listen 80;
-    server_name _;
+NGINX_DIR="/etc/nginx/conf.d/${DOMAIN}.d"
+NGINX_CONF="${NGINX_DIR}/${APP}.conf"
+mkdir -p "${NGINX_DIR}"
 
-    location /ml/ {
-        proxy_pass http://127.0.0.1:5000/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
+if [ "${APP_PATH}" = "/" ]; then
+  LOCATION_BASE="/"
+  LOCATION_ML="/ml/"
+  REDIRECT_BLOCK=""
+else
+  LOCATION_BASE="${APP_PATH}/"
+  LOCATION_ML="${APP_PATH}/ml/"
+  REDIRECT_BLOCK="location = ${APP_PATH} { return 301 ${APP_PATH}/; }"
+fi
 
-    location / {
-        proxy_pass http://127.0.0.1:3000/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
+cat > "${NGINX_CONF}" <<NGINX
+# Bu dosya esp32-monitor uygulamasi icin ters proxy ayarlarini tanimlar.
+${REDIRECT_BLOCK}
+
+location ${LOCATION_ML} {
+    proxy_pass http://127.0.0.1:${ML_PORT}/;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+}
+
+location ${LOCATION_BASE} {
+    proxy_pass http://127.0.0.1:${NODE_PORT}/;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
 }
 NGINX
+
+rm -f "/etc/nginx/conf.d/${APP}.conf"
 
 systemctl daemon-reload
 systemctl enable "${APP}-node.service" "${APP}-ml.service"
