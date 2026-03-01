@@ -7,6 +7,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const mysql = require('mysql2/promise');
 const axios = require('axios');
+const path = require('path');
 
 dotenv.config();
 
@@ -43,6 +44,7 @@ app.use(cors({
 }));
 
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
 const dbPool = mysql.createPool({
   host: process.env.DB_HOST || '127.0.0.1',
@@ -91,31 +93,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.get('/', (_req, res) => {
-  res.type('html').send(`<!doctype html>
-<html lang="tr">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ESP32 Monitor API</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 24px; line-height: 1.5; color: #1a1a1a; }
-    h1 { margin-bottom: 8px; }
-    code { background: #f1f1f1; padding: 2px 6px; border-radius: 4px; }
-    ul { padding-left: 18px; }
-  </style>
-</head>
-<body>
-  <h1>ESP32 Monitor API</h1>
-  <p>Servis ayakta. API endpointleri API key ile korunmaktadir.</p>
-  <ul>
-    <li><code>GET /health</code> - Servis saglik durumu</li>
-    <li><code>POST /api/data</code> - Veri kaydet (x-api-key gerekli)</li>
-    <li><code>GET /api/data</code> - Son veriler (x-api-key gerekli)</li>
-    <li><code>GET /api/data/stats</code> - Istatistikler (x-api-key gerekli)</li>
-    <li><code>GET /api/predict</code> - Tahmin al (x-api-key gerekli)</li>
-  </ul>
-</body>
-</html>`);
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.use('/api', validateApiKey);
@@ -190,6 +168,51 @@ app.get('/api/data/stats', async (_req, res) => {
   } catch (error) {
     console.error('GET /api/data/stats hatasi:', error.message);
     return res.status(500).json({ error: 'Istatistikler alinirken bir hata olustu' });
+  }
+});
+
+app.get('/api/dashboard', async (req, res) => {
+  try {
+    const limitFromQuery = Number(req.query.limit || 100);
+    const limit = Number.isFinite(limitFromQuery)
+      ? Math.min(Math.max(Math.trunc(limitFromQuery), 1), 1000)
+      : 100;
+
+    const [dataRows] = await dbPool.query(`
+      SELECT id, timestamp, salt, sicaklik
+      FROM sensor_data
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `, [limit]);
+
+    const [statsRows] = await dbPool.query(`
+      SELECT
+        AVG(salt) AS avg_salt,
+        MIN(salt) AS min_salt,
+        MAX(salt) AS max_salt,
+        AVG(sicaklik) AS avg_sicaklik,
+        MIN(sicaklik) AS min_sicaklik,
+        MAX(sicaklik) AS max_sicaklik,
+        COUNT(*) AS total_count
+      FROM sensor_data
+    `);
+
+    const [lastPredictionRows] = await dbPool.query(`
+      SELECT id, timestamp, predicted_salt, predicted_sicaklik, model_version
+      FROM predictions
+      ORDER BY timestamp DESC
+      LIMIT 1
+    `);
+
+    return res.json({
+      data: dataRows,
+      statistics: statsRows[0],
+      last_value: dataRows[0] || null,
+      last_prediction: lastPredictionRows[0] || null
+    });
+  } catch (error) {
+    console.error('GET /api/dashboard hatasi:', error.message);
+    return res.status(500).json({ error: 'Dashboard verisi alinirken bir hata olustu' });
   }
 });
 

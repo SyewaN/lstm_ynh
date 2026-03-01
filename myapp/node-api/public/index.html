@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP32 Monitor - Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f5f4f0;
+    --surface: #ffffff;
+    --border: #e8e6e0;
+    --text: #1a1917;
+    --muted: #8a8780;
+    --accent: #2d5a3d;
+    --accent-light: #e8f0ea;
+    --warn: #c4541a;
+    --salt: #1a6b8a;
+    --salt-light: #e8f4f8;
+    --mono: 'DM Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+  }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+  }
+
+  .logo-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+
+  .header-status {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+  }
+
+  .status-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+  }
+  .status-dot.ok { background: #4caf50; }
+  .status-dot.warn { background: #ff9800; }
+  .status-dot.err { background: #f44336; }
+
+  main {
+    padding: 28px 32px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  .page-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    margin-bottom: 20px;
+  }
+
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .input {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    padding: 8px 10px;
+    min-width: 320px;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+
+  .stat-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 400;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .stat-value.salt { color: var(--salt); }
+  .stat-value.temp { color: var(--accent); }
+
+  .stat-unit {
+    font-size: 13px;
+    color: var(--muted);
+    margin-left: 2px;
+  }
+
+  .stat-sub {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .grid-3-1 {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .card-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .card-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+
+  .card-body {
+    padding: 20px;
+  }
+
+  .chart-wrap {
+    position: relative;
+    height: 180px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  thead th {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    text-align: left;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+  }
+
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--bg); }
+
+  tbody td {
+    padding: 10px 20px;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .td-salt { color: var(--salt); }
+  .td-temp { color: var(--accent); }
+  .td-muted { color: var(--muted); font-size: 11px; }
+
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+  }
+
+  .btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.04em;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+
+  .btn-primary:hover { background: #1e3d2a; }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+  }
+
+  .btn-ghost:hover { background: var(--bg); color: var(--text); }
+
+  .predict-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .predict-box {
+    border-radius: 8px;
+    padding: 16px;
+  }
+
+  .predict-box.salt-box {
+    background: var(--salt-light);
+    border: 1px solid #b8dae8;
+  }
+
+  .predict-box.temp-box {
+    background: var(--accent-light);
+    border: 1px solid #b8d4be;
+  }
+
+  .predict-box-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .predict-box-value {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 500;
+  }
+
+  .predict-box.salt-box .predict-box-value { color: var(--salt); }
+  .predict-box.temp-box .predict-box-value { color: var(--accent); }
+
+  .predict-note {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  .health-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .health-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--bg);
+    border-radius: 6px;
+  }
+
+  .health-name {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text);
+  }
+
+  .health-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .badge-ok { background: #e8f5e9; color: #2e7d32; }
+  .badge-warn { background: #fff3e0; color: #e65100; }
+  .badge-err { background: #ffebee; color: #c62828; }
+
+  .train-section {
+    padding: 20px;
+    text-align: center;
+  }
+
+  .train-btn {
+    width: 100%;
+    padding: 12px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin-bottom: 8px;
+  }
+
+  .train-btn:hover { background: #1e3d2a; }
+
+  .train-note {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .last-updated {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .legend {
+    display: flex;
+    gap: 16px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .legend-line {
+    width: 16px;
+    height: 2px;
+    border-radius: 1px;
+  }
+
+  @media (max-width: 1024px) {
+    .stats-row { grid-template-columns: 1fr 1fr; }
+    .grid-2, .grid-3-1 { grid-template-columns: 1fr; }
+    .input { min-width: 220px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    ESP32 MONITOR
+  </div>
+  <div class="header-status">
+    <div class="status-pill">
+      <div class="status-dot" id="dotNode"></div>
+      Node API
+    </div>
+    <div class="status-pill">
+      <div class="status-dot" id="dotDb"></div>
+      MySQL
+    </div>
+    <div class="status-pill">
+      <div class="status-dot" id="dotMl"></div>
+      ML Servisi
+    </div>
+    <div class="status-pill" style="color: var(--muted); font-size:11px;" id="lastUpdate">
+      Son guncelleme: -
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="page-title">Genel Bakis</div>
+
+  <div class="toolbar">
+    <input id="apiKeyInput" class="input" type="text" placeholder="API Key girin (x-api-key)" />
+    <button class="btn btn-primary" id="saveKeyBtn">Key Kaydet</button>
+    <button class="btn btn-ghost" id="refreshBtn">Yenile</button>
+    <span class="last-updated" id="message"></span>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Son Tuz Degeri</div>
+      <div class="stat-value salt" id="lastSalt">-<span class="stat-unit">ppt</span></div>
+      <div class="stat-sub" id="saltDelta">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Son Sicaklik</div>
+      <div class="stat-value temp" id="lastTemp">-<span class="stat-unit">degC</span></div>
+      <div class="stat-sub" id="tempDelta">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Toplam Kayit</div>
+      <div class="stat-value" id="totalCount">0</div>
+      <div class="stat-sub">Veritabanindaki toplam kayit</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Model Durumu</div>
+      <div class="stat-value" style="font-size:16px; padding-top:6px;" id="modelStatus">Bekleniyor</div>
+      <div class="stat-sub" id="modelSub">-</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Tuz Olcumleri</span>
+        <div class="legend">
+          <div class="legend-item">
+            <div class="legend-line" style="background: var(--salt)"></div>
+            Gercek
+          </div>
+          <div class="legend-item">
+            <div class="legend-line" style="background: var(--salt); opacity:0.4"></div>
+            Son tahmin
+          </div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrap">
+          <canvas id="saltChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Sicaklik Olcumleri</span>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrap">
+          <canvas id="tempChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-3-1">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Son Veriler</span>
+        <span class="last-updated">Otomatik yenileme: 30s</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Zaman</th>
+            <th>Tuz (ppt)</th>
+            <th>Sicaklik (degC)</th>
+          </tr>
+        </thead>
+        <tbody id="dataTableBody"></tbody>
+      </table>
+      <div class="btn-row">
+        <button class="btn btn-primary" style="margin-left:auto;" id="csvBtn">CSV Indir</button>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">LSTM Tahmini</span>
+          <span class="last-updated">Sonraki olcum</span>
+        </div>
+        <div class="card-body">
+          <div class="predict-grid">
+            <div class="predict-box salt-box">
+              <div class="predict-box-label">Tuz</div>
+              <div class="predict-box-value" id="predSalt">-</div>
+              <div style="font-family:var(--mono); font-size:10px; color:var(--salt); margin-top:4px;">ppt</div>
+            </div>
+            <div class="predict-box temp-box">
+              <div class="predict-box-label">Sicaklik</div>
+              <div class="predict-box-value" id="predTemp">-</div>
+              <div style="font-family:var(--mono); font-size:10px; color:var(--accent); margin-top:4px;">degC</div>
+            </div>
+          </div>
+          <div class="predict-note" id="predNote">Model bilgisi bekleniyor</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Model Egitimi</span>
+        </div>
+        <div class="train-section">
+          <button class="train-btn" id="trainBtn">Modeli Egit</button>
+          <div class="train-note" id="trainNote">Son egitim bilgisi yok</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Sistem Sagligi</span>
+        </div>
+        <div class="card-body">
+          <div class="health-list">
+            <div class="health-item">
+              <span class="health-name">Node.js API</span>
+              <span class="health-badge" id="badgeNode">Bekleniyor</span>
+            </div>
+            <div class="health-item">
+              <span class="health-name">MySQL</span>
+              <span class="health-badge" id="badgeDb">Bekleniyor</span>
+            </div>
+            <div class="health-item">
+              <span class="health-name">ML Servisi</span>
+              <span class="health-badge" id="badgeMl">Bekleniyor</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</main>
+
+<script>
+  const state = {
+    data: [],
+    prediction: null
+  };
+  const appBasePath = window.location.pathname.replace(/\/$/, '') || '';
+
+  const chartDefaults = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: {
+      backgroundColor: '#1a1917',
+      titleFont: { family: 'DM Mono', size: 10 },
+      bodyFont: { family: 'DM Mono', size: 11 },
+      padding: 10,
+      cornerRadius: 6
+    }},
+    scales: {
+      x: { grid: { color: '#e8e6e0' }, ticks: { font: { family: 'DM Mono', size: 9 }, color: '#8a8780' } },
+      y: { grid: { color: '#e8e6e0' }, ticks: { font: { family: 'DM Mono', size: 9 }, color: '#8a8780' } }
+    }
+  };
+
+  const saltChart = new Chart(document.getElementById('saltChart'), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        {
+          data: [],
+          borderColor: '#1a6b8a',
+          backgroundColor: 'rgba(26,107,138,0.08)',
+          fill: true,
+          tension: 0.4,
+          pointRadius: 3,
+          pointBackgroundColor: '#1a6b8a'
+        },
+        {
+          data: [],
+          borderColor: '#1a6b8a',
+          borderDash: [4, 4],
+          backgroundColor: 'transparent',
+          pointRadius: 5,
+          pointBackgroundColor: 'white',
+          pointBorderColor: '#1a6b8a',
+          pointBorderWidth: 2,
+          spanGaps: true
+        }
+      ]
+    },
+    options: chartDefaults
+  });
+
+  const tempChart = new Chart(document.getElementById('tempChart'), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        data: [],
+        borderColor: '#2d5a3d',
+        backgroundColor: 'rgba(45,90,61,0.08)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 3,
+        pointBackgroundColor: '#2d5a3d'
+      }]
+    },
+    options: chartDefaults
+  });
+
+  function setBadge(id, text, cls) {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    el.className = 'health-badge ' + cls;
+  }
+
+  function setDot(id, cls) {
+    const dot = document.getElementById(id);
+    dot.className = 'status-dot ' + cls;
+  }
+
+  function getApiKey() {
+    return localStorage.getItem('esp32_api_key') || '';
+  }
+
+  function formatNum(v) {
+    if (v === null || v === undefined || Number.isNaN(Number(v))) return '-';
+    return Number(v).toFixed(2);
+  }
+
+  function formatTime(ts) {
+    if (!ts) return '-';
+    const d = new Date(ts);
+    return d.toLocaleString('tr-TR');
+  }
+
+  function toCsv(rows) {
+    const head = 'id,timestamp,salt,sicaklik\n';
+    const body = rows.map((r) => `${r.id},${r.timestamp},${r.salt},${r.sicaklik}`).join('\n');
+    return head + body;
+  }
+
+  function render(data) {
+    state.data = data.data || [];
+    state.prediction = data.last_prediction || null;
+
+    const rows = state.data;
+    const last = rows[0];
+    const prev = rows[1];
+
+    document.getElementById('lastSalt').innerHTML = `${formatNum(last?.salt)}<span class="stat-unit">ppt</span>`;
+    document.getElementById('lastTemp').innerHTML = `${formatNum(last?.sicaklik)}<span class="stat-unit">degC</span>`;
+    document.getElementById('totalCount').textContent = Number(data.statistics?.total_count || 0).toLocaleString('tr-TR');
+
+    if (last && prev) {
+      const ds = (Number(last.salt) - Number(prev.salt)).toFixed(2);
+      const dt = (Number(last.sicaklik) - Number(prev.sicaklik)).toFixed(2);
+      document.getElementById('saltDelta').textContent = `${ds >= 0 ? '↑' : '↓'} ${ds} son olcume gore`;
+      document.getElementById('tempDelta').textContent = `${dt >= 0 ? '↑' : '↓'} ${dt} son olcume gore`;
+    }
+
+    if (state.prediction) {
+      document.getElementById('predSalt').textContent = formatNum(state.prediction.predicted_salt);
+      document.getElementById('predTemp').textContent = formatNum(state.prediction.predicted_sicaklik);
+      document.getElementById('predNote').textContent = `Model ${state.prediction.model_version || 'v1'} · ${formatTime(state.prediction.timestamp)}`;
+      document.getElementById('modelStatus').textContent = 'Egitildi';
+      document.getElementById('modelSub').textContent = `${state.prediction.model_version || 'v1'} · son tahmin kaydi`; 
+      setDot('dotMl', 'ok');
+      setBadge('badgeMl', 'Aktif', 'badge-ok');
+    } else {
+      document.getElementById('predSalt').textContent = '-';
+      document.getElementById('predTemp').textContent = '-';
+      document.getElementById('predNote').textContent = 'Henuz tahmin yok';
+      document.getElementById('modelStatus').textContent = 'Bekleniyor';
+      document.getElementById('modelSub').textContent = 'Tahmin uretildiginde guncellenir';
+      setDot('dotMl', 'warn');
+      setBadge('badgeMl', 'Bekliyor', 'badge-warn');
+    }
+
+    const body = document.getElementById('dataTableBody');
+    body.innerHTML = rows.slice(0, 20).map((r) => `
+      <tr>
+        <td class="td-muted">${r.id}</td>
+        <td class="td-muted">${formatTime(r.timestamp)}</td>
+        <td class="td-salt">${formatNum(r.salt)}</td>
+        <td class="td-temp">${formatNum(r.sicaklik)}</td>
+      </tr>
+    `).join('');
+
+    const ascRows = [...rows].reverse();
+    const labels = ascRows.map((r) => new Date(r.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }));
+    const salts = ascRows.map((r) => Number(r.salt));
+    const temps = ascRows.map((r) => Number(r.sicaklik));
+
+    const predSeries = new Array(salts.length).fill(null);
+    if (state.prediction && predSeries.length > 0) {
+      predSeries[predSeries.length - 1] = Number(state.prediction.predicted_salt);
+    }
+
+    saltChart.data.labels = labels;
+    saltChart.data.datasets[0].data = salts;
+    saltChart.data.datasets[1].data = predSeries;
+    saltChart.update();
+
+    tempChart.data.labels = labels;
+    tempChart.data.datasets[0].data = temps;
+    tempChart.update();
+
+    setDot('dotNode', 'ok');
+    setDot('dotDb', rows.length > 0 ? 'ok' : 'warn');
+    setBadge('badgeNode', 'Aktif', 'badge-ok');
+    setBadge('badgeDb', rows.length > 0 ? 'Aktif' : 'Bos', rows.length > 0 ? 'badge-ok' : 'badge-warn');
+
+    const now = new Date();
+    document.getElementById('lastUpdate').textContent = `Son guncelleme: ${now.toLocaleTimeString('tr-TR')}`;
+  }
+
+  async function fetchDashboard() {
+    const key = getApiKey();
+    if (!key) {
+      document.getElementById('message').textContent = 'API key girin.';
+      return;
+    }
+
+    try {
+      const res = await fetch(`${appBasePath}/api/dashboard?limit=100`, {
+        headers: { 'x-api-key': key }
+      });
+
+      if (!res.ok) {
+        throw new Error(`API hata: ${res.status}`);
+      }
+
+      const json = await res.json();
+      render(json);
+      document.getElementById('message').textContent = 'Veriler guncellendi.';
+    } catch (err) {
+      document.getElementById('message').textContent = err.message;
+      setDot('dotNode', 'err');
+      setBadge('badgeNode', 'Hata', 'badge-err');
+    }
+  }
+
+  async function trainModel() {
+    try {
+      const btn = document.getElementById('trainBtn');
+      btn.disabled = true;
+      btn.textContent = 'Egitiliyor...';
+
+      const response = await fetch(`${appBasePath}/ml/train`);
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Egitim basarisiz');
+      }
+
+      document.getElementById('trainNote').textContent = `Son egitim: ${new Date().toLocaleString('tr-TR')} · ${result.row_count || 0} ornek`;
+      await fetchDashboard();
+    } catch (err) {
+      document.getElementById('trainNote').textContent = `Egitim hatasi: ${err.message}`;
+    } finally {
+      const btn = document.getElementById('trainBtn');
+      btn.disabled = false;
+      btn.textContent = 'Modeli Egit';
+    }
+  }
+
+  document.getElementById('saveKeyBtn').addEventListener('click', () => {
+    const key = document.getElementById('apiKeyInput').value.trim();
+    localStorage.setItem('esp32_api_key', key);
+    fetchDashboard();
+  });
+
+  document.getElementById('refreshBtn').addEventListener('click', fetchDashboard);
+  document.getElementById('trainBtn').addEventListener('click', trainModel);
+
+  document.getElementById('csvBtn').addEventListener('click', () => {
+    const csv = toCsv(state.data);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `esp32-data-${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('apiKeyInput').value = getApiKey();
+  fetchDashboard();
+  setInterval(fetchDashboard, 30000);
+</script>
+</body>
+</html>
