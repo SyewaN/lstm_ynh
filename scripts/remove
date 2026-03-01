@@ -1,0 +1,29 @@
+#!/bin/bash
+# Bu script YunoHost uzerinden uygulamayi kaldirir, servisleri durdurur ve veritabanini siler.
+
+set -eu
+
+APP="esp32-monitor"
+DB_NAME="esp32_monitor"
+DB_USER="esp32_user"
+INSTALL_DIR="/var/www/${APP}"
+
+systemctl stop "${APP}-node.service" 2>/dev/null || true
+systemctl stop "${APP}-ml.service" 2>/dev/null || true
+systemctl disable "${APP}-node.service" 2>/dev/null || true
+systemctl disable "${APP}-ml.service" 2>/dev/null || true
+
+rm -f "/etc/systemd/system/${APP}-node.service"
+rm -f "/etc/systemd/system/${APP}-ml.service"
+rm -f "/etc/nginx/conf.d/${APP}.conf"
+
+mysql -uroot <<SQL
+DROP DATABASE IF EXISTS ${DB_NAME};
+DROP USER IF EXISTS '${DB_USER}'@'localhost';
+FLUSH PRIVILEGES;
+SQL
+
+rm -rf "${INSTALL_DIR}"
+
+systemctl daemon-reload
+nginx -t && systemctl reload nginx
