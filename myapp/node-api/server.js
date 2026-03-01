@@ -214,6 +214,26 @@ app.get('/api/dashboard', async (req, res) => {
   }
 });
 
+app.get('/api/train', async (_req, res) => {
+  try {
+    const response = await axios.get(`${mlServiceUrl}/train`, {
+      timeout: 120000
+    });
+    return res.status(response.status).json(response.data);
+  } catch (error) {
+    console.error('GET /api/train hatasi:', error.message);
+
+    if (error.response) {
+      return res.status(error.response.status).json({
+        error: 'ML egitim servisi hata dondu',
+        details: error.response.data
+      });
+    }
+
+    return res.status(502).json({ error: 'ML egitim servisine ulasilamadi' });
+  }
+});
+
 app.get('/api/predict', validateApiKey, async (_req, res) => {
   try {
     const response = await axios.get(`${mlServiceUrl}/predict`, {

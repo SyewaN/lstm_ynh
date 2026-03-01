@@ -798,8 +798,14 @@
       btn.disabled = true;
       btn.textContent = 'Egitiliyor...';
 
-      const response = await fetch(`${appBasePath}/ml/train`);
-      const result = await response.json();
+      const response = await fetch(`${appBasePath}/api/train`);
+      const raw = await response.text();
+      let result;
+      try {
+        result = JSON.parse(raw);
+      } catch (_e) {
+        throw new Error(`Beklenmeyen yanit: ${raw.slice(0, 120)}`);
+      }
 
       if (!response.ok) {
         throw new Error(result.error || 'Egitim basarisiz');
