@@ -96,9 +96,7 @@ app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.use('/api', validateApiKey);
-
-app.post('/api/data', async (req, res) => {
+app.post('/api/data', validateApiKey, async (req, res) => {
   try {
     const salt = Number(req.body.salt);
     const sicaklik = Number(req.body.sicaklik);
@@ -216,7 +214,7 @@ app.get('/api/dashboard', async (req, res) => {
   }
 });
 
-app.get('/api/predict', async (_req, res) => {
+app.get('/api/predict', validateApiKey, async (_req, res) => {
   try {
     const response = await axios.get(`${mlServiceUrl}/predict`, {
       timeout: 30000
