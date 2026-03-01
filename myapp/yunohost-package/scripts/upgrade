@@ -8,8 +8,20 @@ INSTALL_DIR="/var/www/${APP}"
 NODE_DIR="${INSTALL_DIR}/node-api"
 ML_DIR="${INSTALL_DIR}/ml-service"
 PY_VENV="${ML_DIR}/.venv"
+APP_SRC_DIR="${YNH_APP_BASEDIR:-/var/cache/yunohost/app_tmp}"
 
-cp -r /var/cache/yunohost/app_tmp/* "${INSTALL_DIR}/"
+if [ -d "${APP_SRC_DIR}/myapp/node-api" ] && [ -d "${APP_SRC_DIR}/myapp/ml-service" ]; then
+  rm -rf "${INSTALL_DIR}/node-api" "${INSTALL_DIR}/ml-service"
+  cp -r "${APP_SRC_DIR}/myapp/node-api" "${INSTALL_DIR}/node-api"
+  cp -r "${APP_SRC_DIR}/myapp/ml-service" "${INSTALL_DIR}/ml-service"
+elif [ -d "${APP_SRC_DIR}/node-api" ] && [ -d "${APP_SRC_DIR}/ml-service" ]; then
+  rm -rf "${INSTALL_DIR}/node-api" "${INSTALL_DIR}/ml-service"
+  cp -r "${APP_SRC_DIR}/node-api" "${INSTALL_DIR}/node-api"
+  cp -r "${APP_SRC_DIR}/ml-service" "${INSTALL_DIR}/ml-service"
+else
+  echo "HATA: node-api ve ml-service klasorleri bulunamadi. APP_SRC_DIR=${APP_SRC_DIR}"
+  exit 1
+fi
 
 cd "${NODE_DIR}"
 npm install --omit=dev

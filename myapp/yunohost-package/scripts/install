@@ -11,9 +11,20 @@ PY_VENV="${ML_DIR}/.venv"
 DB_NAME="esp32_monitor"
 DB_USER="esp32_user"
 DB_PASS="esp32_pass"
+APP_SRC_DIR="${YNH_APP_BASEDIR:-/var/cache/yunohost/app_tmp}"
 
 mkdir -p "${INSTALL_DIR}"
-cp -r /var/cache/yunohost/app_tmp/* "${INSTALL_DIR}/"
+
+if [ -d "${APP_SRC_DIR}/myapp/node-api" ] && [ -d "${APP_SRC_DIR}/myapp/ml-service" ]; then
+  cp -r "${APP_SRC_DIR}/myapp/node-api" "${INSTALL_DIR}/node-api"
+  cp -r "${APP_SRC_DIR}/myapp/ml-service" "${INSTALL_DIR}/ml-service"
+elif [ -d "${APP_SRC_DIR}/node-api" ] && [ -d "${APP_SRC_DIR}/ml-service" ]; then
+  cp -r "${APP_SRC_DIR}/node-api" "${INSTALL_DIR}/node-api"
+  cp -r "${APP_SRC_DIR}/ml-service" "${INSTALL_DIR}/ml-service"
+else
+  echo "HATA: node-api ve ml-service klasorleri bulunamadi. APP_SRC_DIR=${APP_SRC_DIR}"
+  exit 1
+fi
 
 mysql -uroot <<SQL
 CREATE DATABASE IF NOT EXISTS ${DB_NAME};
@@ -33,7 +44,7 @@ python3 -m venv "${PY_VENV}"
 cat > /etc/systemd/system/${APP}-node.service <<SERVICE
 [Unit]
 Description=${APP} Node API Service
-After=network.target mysql.service
+After=network.target mariadb.service mysql.service
 
 [Service]
 Type=simple
@@ -52,7 +63,7 @@ SERVICE
 cat > /etc/systemd/system/${APP}-ml.service <<SERVICE
 [Unit]
 Description=${APP} Flask ML Service
-After=network.target mysql.service
+After=network.target mariadb.service mysql.service
 
 [Service]
 Type=simple
