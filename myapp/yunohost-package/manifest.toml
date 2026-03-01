@@ -23,6 +23,12 @@ ram.build = "1G"
 ram.runtime = "512M"
 
 [install]
+[install.domain]
+type = "domain"
+
+[install.path]
+type = "path"
+default = "/"
 
 [resources]
 
