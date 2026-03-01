@@ -1,0 +1,98 @@
+#!/bin/bash
+# Bu script YunoHost uzerinde uygulamayi kurar, bagimliliklari yukler ve servisleri baslatir.
+
+set -eu
+
+APP="esp32-monitor"
+INSTALL_DIR="/var/www/${APP}"
+NODE_DIR="${INSTALL_DIR}/node-api"
+ML_DIR="${INSTALL_DIR}/ml-service"
+PY_VENV="${ML_DIR}/.venv"
+DB_NAME="esp32_monitor"
+DB_USER="esp32_user"
+DB_PASS="esp32_pass"
+
+mkdir -p "${INSTALL_DIR}"
+cp -r /var/cache/yunohost/app_tmp/* "${INSTALL_DIR}/"
+
+mysql -uroot <<SQL
+CREATE DATABASE IF NOT EXISTS ${DB_NAME};
+CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
+GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';
+FLUSH PRIVILEGES;
+SQL
+
+cd "${NODE_DIR}"
+npm install --omit=dev
+
+cd "${ML_DIR}"
+python3 -m venv "${PY_VENV}"
+"${PY_VENV}/bin/pip" install --upgrade pip
+"${PY_VENV}/bin/pip" install -r requirements.txt
+
+cat > /etc/systemd/system/${APP}-node.service <<SERVICE
+[Unit]
+Description=${APP} Node API Service
+After=network.target mysql.service
+
+[Service]
+Type=simple
+WorkingDirectory=${NODE_DIR}
+EnvironmentFile=${NODE_DIR}/.env
+ExecStart=/usr/bin/node ${NODE_DIR}/server.js
+Restart=always
+RestartSec=3
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+cat > /etc/systemd/system/${APP}-ml.service <<SERVICE
+[Unit]
+Description=${APP} Flask ML Service
+After=network.target mysql.service
+
+[Service]
+Type=simple
+WorkingDirectory=${ML_DIR}
+EnvironmentFile=${NODE_DIR}/.env
+ExecStart=${PY_VENV}/bin/python ${ML_DIR}/app.py
+Restart=always
+RestartSec=3
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+cat > /etc/nginx/conf.d/${APP}.conf <<NGINX
+server {
+    listen 80;
+    server_name _;
+
+    location /ml/ {
+        proxy_pass http://127.0.0.1:5000/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3000/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+NGINX
+
+systemctl daemon-reload
+systemctl enable "${APP}-node.service" "${APP}-ml.service"
+systemctl restart "${APP}-node.service" "${APP}-ml.service"
+nginx -t
+systemctl reload nginx
