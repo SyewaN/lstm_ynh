@@ -48,4 +48,4 @@ ml_service.default = 5000
 ml_service.exposed = false
 
 [resources.apt]
-packages = "nodejs npm python3 python3-venv python3-pip mysql-server nginx"
+packages = "nodejs npm python3 python3-venv python3-pip mariadb-server nginx"
