@@ -1,121 +1,142 @@
-# LSTM TDS Tahmin Projesi
+# ESP32 Monitor - Kurulum ve Çalıştırma
 
-Sulama suyu tuzluluğu (TDS) tahmini için LSTM tabanlı kısa ve çalışır bir pipeline.
+Bu proje:
+- ESP32'den Bluetooth ile gelen tuz/sıcaklık verisini alır
+- MySQL'e kaydeder
+- LSTM modeli ile tahmin üretir
+- Dashboard üzerinden izleme ve yönetim sağlar
 
-## Kurulum
+## Dizin Yapısı
+
+```text
+/var/www/esp32monitor/
+  api/
+    server.js
+    package.json
+    .env
+    ecosystem.config.js
+  lstm/
+    app.py
+    requirements.txt
+    esp32-lstm.service
+    models/
+      model.h5
+      scaler.pkl
+  dashboard/
+    index.html
+```
+
+## 1) Klasörleri Oluştur
 
 ```bash
-python -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
+mkdir -p /var/www/esp32monitor/{api,lstm/models,dashboard}
+```
+
+## 2) MySQL Veritabanı ve Tablolar
+
+Önce MySQL'e gir:
+
+```bash
+mysql -u root -p
+```
+
+Ardından şu SQL komutlarını çalıştır:
+
+```sql
+CREATE DATABASE IF NOT EXISTS esp32monitor;
+USE esp32monitor;
+
+CREATE TABLE IF NOT EXISTS sensor_data (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+  salt FLOAT NOT NULL,
+  sicaklik FLOAT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS predictions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+  predicted_salt FLOAT,
+  predicted_sicaklik FLOAT
+);
+```
+
+Not: `esp32user` kullanıcısını ve şifresini sunucunuzda oluşturup yetki verin.
+
+## 3) Node.js API Kurulumu
+
+```bash
+cd /var/www/esp32monitor/api
+npm install
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup
+```
+
+`pm2 startup` çıktısında verilen komutu ayrıca çalıştırın.
+
+## 4) Python LSTM Servisi Kurulumu
+
+```bash
+cd /var/www/esp32monitor/lstm
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
+deactivate
+sudo cp esp32-lstm.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable esp32-lstm
+sudo systemctl start esp32-lstm
 ```
 
-## Kullanım
-
-1) Veri üret / çek:
+Servis kontrolü:
 
 ```bash
-python data/generate_sample.py --site-id 09380000
+sudo systemctl status esp32-lstm
 ```
 
-2) Model eğit:
+## 5) NGINX (YunoHost) Reverse Proxy Ayarı
 
 ```bash
-python src/train.py --epochs 50
+sudo nano /etc/nginx/conf.d/whoogel.syewan.ynh.fr.conf
 ```
 
-Hızlı test:
+`server {}` bloğuna şu `location` bloklarını ekleyin:
+
+```nginx
+location /api {
+    proxy_pass http://127.0.0.1:3001;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_read_timeout 300;
+}
+
+location /dashboard {
+    alias /var/www/esp32monitor/dashboard;
+    index index.html;
+}
+```
+
+Sonra konfigürasyonu test edip yeniden yükleyin:
 
 ```bash
-python src/train.py --epochs 5
+sudo nginx -t
+sudo nginx -s reload
 ```
 
-3) Tahmin al:
+## 6) Test
 
 ```bash
-python src/predict.py --steps 24
+curl https://whoogel.syewan.ynh.fr/api/health
+curl https://whoogel.syewan.ynh.fr/dashboard
 ```
 
-## Veri Kaynağı
+## Notlar
 
-- USGS NWIS Instantaneous Values API: https://waterservices.usgs.gov/nwis/iv/
-- Bu projede kullanılan örnek istasyon: `09380000`  
-  İstasyon sayfası: https://waterdata.usgs.gov/monitoring-location/USGS-09380000/
-- Kullanılan USGS parametre kodu: `00095` (Specific Conductance)
-
-## Varsayılan Ayarlar
-
-- Pencere uzunluğu: `24`
-- Bölme: `%70 train / %15 val / %15 test`
-- Özellikler (4):
-  - `specific_conductance`
-  - `temperature`
-  - `weather_index`
-  - `soil_type_code`
-- Model: `LSTM(50) -> LSTM(50) -> Dense(1)` (dropout: `0.2`)
-- Loss: `MSE`, Optimizer: `Adam`
-
-## Parametreler
-
-Model hedefi:
-- `tds` (tahmin edilen değer)
-
-Model girişleri (4):
-- `specific_conductance`
-- `temperature`
-- `weather_index`
-- `soil_type_code`
-
-CLI parametreleri:
-- `data/generate_sample.py`: `--site-id`, `--start-date`, `--end-date`, `--synthetic-points`, `--output`
-- `src/train.py`: `--data`, `--sequence-length`, `--epochs`, `--batch-size`, `--output-dir`, `--feature-columns`
-- `src/predict.py`: `--data`, `--model-path`, `--metadata-path`, `--scalers-path`, `--steps`, `--output`
-
-## Çıktılar
-
-Eğitim sonrası `models/` klasörü:
-
-- `tds_lstm_model.h5`
-- `training_history.png`
-- `predictions.png`
-- `metrics.txt`
-- `metadata.json`
-- `scalers.pkl`
-- `forecast.csv` (tahmin sonrası)
-
-## Grafikler
-
-GitHub/IDE içinde bu dosyaları açarak görebilirsin:
-
-- `models/training_history.png`
-- `models/predictions.png`
-
-Örnek önizleme (dosya varsa görünür):
-
-![Eğitim Geçmişi](models/training_history.png)
-![Gerçek vs Tahmin](models/predictions.png)
-
-## Not
-
-- Model her `train.py` çalıştırmada baştan eğitilir.
-- Sürekli kullanımda akış: seyrek eğitim + sık tahmin.
-- TDS yaklaşık dönüşüm: `TDS ≈ 0.65 * specific_conductance`
-
-## ESP Verisiyle Test
-
-Evet, bu proje ESP cihazından gelen veriyi test etmeye uygundur.  
-ESP verisini CSV olarak şu kolonlarla verirsen doğrudan eğitim/tahmin yapılabilir:
-
-- `timestamp`
-- `specific_conductance`
-- `temperature`
-- `weather_index`
-- `soil_type_code`
-- `tds` (eğitim için gerekli, sadece tahminde zorunlu değil)
-
-Örnek:
-
-```csv
-timestamp,specific_conductance,temperature,weather_index,soil_type_code,tds
-2026-01-01 00:00:00,760.2,19.1,58.0,2,494.1
-```
+- API varsayılan port: `3001`
+- LSTM servisi varsayılan port: `5001`
+- Dashboard API çağrıları sabit olarak `https://whoogel.syewan.ynh.fr` adresine gider.
+- Model dosyaları eğitimden sonra oluşur:
+  - `/var/www/esp32monitor/lstm/models/model.h5`
+  - `/var/www/esp32monitor/lstm/models/scaler.pkl`

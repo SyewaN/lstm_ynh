@@ -1,9 +1,0 @@
-{
-  "sequence_length": 24,
-  "feature_columns": [
-    "specific_conductance",
-    "temperature"
-  ],
-  "target_column": "tds",
-  "specific_conductance_to_tds_ratio": 0.65
-}

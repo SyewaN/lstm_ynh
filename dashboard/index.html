@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESP32 Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #0f0f0f;
+      --panel: #171717;
+      --panel-2: #1e1e1e;
+      --text: #ffffff;
+      --muted: #bcbcbc;
+      --ok: #36d399;
+      --err: #ff5d73;
+      --accent: #59c3ff;
+      --border: #2c2c2c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: 'DM Mono', monospace;
+      background: radial-gradient(circle at top right, #1a1a1a, var(--bg) 45%);
+      color: var(--text);
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: 0.5px;
+    }
+
+    .health {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    .health-item {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 10px;
+      color: var(--muted);
+    }
+
+    .dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    .grid-stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .card {
+      background: linear-gradient(145deg, var(--panel), var(--panel-2));
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    .value {
+      font-size: 24px;
+      font-weight: 500;
+      word-break: break-word;
+    }
+
+    .charts {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .panel-title {
+      margin: 0 0 10px;
+      font-size: 15px;
+      color: var(--muted);
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .btn {
+      border: 1px solid var(--border);
+      background: #232323;
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 13px;
+    }
+
+    .btn:hover { background: #2b2b2b; }
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 10px;
+      min-height: 20px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 680px;
+    }
+
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid #262626;
+      font-size: 13px;
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .message {
+      margin-top: 8px;
+      color: #ffb347;
+      font-size: 13px;
+      min-height: 18px;
+    }
+
+    @media (max-width: 980px) {
+      .grid-stats,
+      .charts,
+      .actions {
+        grid-template-columns: 1fr;
+      }
+
+      h1 { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>ESP32 Monitor</h1>
+      <div class="health" id="healthBadges">
+        <span class="health-item"><span class="dot" style="background:#777"></span>API: ...</span>
+        <span class="health-item"><span class="dot" style="background:#777"></span>MySQL: ...</span>
+        <span class="health-item"><span class="dot" style="background:#777"></span>LSTM: ...</span>
+      </div>
+    </header>
+
+    <section class="grid-stats">
+      <article class="card">
+        <div class="label">Son Tuz (ppt)</div>
+        <div class="value" id="lastSalt">-</div>
+      </article>
+      <article class="card">
+        <div class="label">Son Sıcaklık (°C)</div>
+        <div class="value" id="lastTemp">-</div>
+      </article>
+      <article class="card">
+        <div class="label">Toplam Kayıt</div>
+        <div class="value" id="totalCount">0</div>
+      </article>
+      <article class="card">
+        <div class="label">Model Durumu</div>
+        <div class="value" id="modelStatus">Bilinmiyor</div>
+      </article>
+    </section>
+
+    <section class="charts">
+      <article class="card">
+        <h2 class="panel-title">Tuz Grafiği (Son 50 Veri)</h2>
+        <canvas id="saltChart"></canvas>
+      </article>
+      <article class="card">
+        <h2 class="panel-title">Sıcaklık Grafiği (Son 50 Veri)</h2>
+        <canvas id="tempChart"></canvas>
+      </article>
+    </section>
+
+    <section class="actions">
+      <article class="card">
+        <h2 class="panel-title">LSTM Tahmin Paneli</h2>
+        <button class="btn" id="predictBtn">Tahmini Güncelle</button>
+        <div class="status" id="predictResult">Henüz tahmin alınmadı.</div>
+      </article>
+
+      <article class="card">
+        <h2 class="panel-title">Model Eğitimi</h2>
+        <button class="btn" id="trainBtn">Modeli Eğit</button>
+        <div class="status" id="trainResult">Henüz eğitim başlatılmadı.</div>
+      </article>
+    </section>
+
+    <section>
+      <div class="toolbar">
+        <h2 class="panel-title" style="margin:0">Son 20 Kayıt</h2>
+        <button class="btn" id="csvBtn">CSV İndir</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Zaman</th>
+              <th>Tuz</th>
+              <th>Sıcaklık</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+      <div class="message" id="errorMessage"></div>
+    </section>
+  </div>
+
+  <script>
+    // Tüm istekleri sabit domain üzerinden gönder.
+    const BASE_URL = 'https://whoogel.syewan.ynh.fr';
+
+    const healthBadges = document.getElementById('healthBadges');
+    const lastSaltEl = document.getElementById('lastSalt');
+    const lastTempEl = document.getElementById('lastTemp');
+    const totalCountEl = document.getElementById('totalCount');
+    const modelStatusEl = document.getElementById('modelStatus');
+    const predictResultEl = document.getElementById('predictResult');
+    const trainResultEl = document.getElementById('trainResult');
+    const tableBody = document.getElementById('tableBody');
+    const errorMessageEl = document.getElementById('errorMessage');
+
+    const predictBtn = document.getElementById('predictBtn');
+    const trainBtn = document.getElementById('trainBtn');
+    const csvBtn = document.getElementById('csvBtn');
+
+    function setError(message) {
+      errorMessageEl.textContent = message || '';
+    }
+
+    async function apiGet(path, timeoutMs = 30000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(`${BASE_URL}${path}`, { signal: controller.signal });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        return data;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    function fmt(value, digits = 2) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+      return Number(value).toFixed(digits);
+    }
+
+    function renderHealth(health) {
+      const items = [
+        { label: 'API', key: 'api' },
+        { label: 'MySQL', key: 'db' },
+        { label: 'LSTM', key: 'lstm' }
+      ];
+
+      healthBadges.innerHTML = items.map((item) => {
+        const ok = health[item.key] === 'ok';
+        const dot = ok ? 'var(--ok)' : 'var(--err)';
+        const text = ok ? 'ok' : 'err';
+        return `<span class="health-item"><span class="dot" style="background:${dot}"></span>${item.label}: ${text}</span>`;
+      }).join('');
+
+      modelStatusEl.textContent = health.lstm === 'ok' ? 'Hazır' : 'Servis Hatası';
+    }
+
+    function buildLineChart(canvasId, label, color) {
+      return new Chart(document.getElementById(canvasId), {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [{
+            label,
+            data: [],
+            borderColor: color,
+            pointRadius: 2,
+            borderWidth: 2,
+            tension: 0.25
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: { labels: { color: '#e7e7e7' } }
+          },
+          scales: {
+            x: {
+              ticks: { color: '#a3a3a3' },
+              grid: { color: '#2a2a2a' }
+            },
+            y: {
+              ticks: { color: '#a3a3a3' },
+              grid: { color: '#2a2a2a' }
+            }
+          }
+        }
+      });
+    }
+
+    const saltChart = buildLineChart('saltChart', 'Tuz', '#59c3ff');
+    const tempChart = buildLineChart('tempChart', 'Sıcaklık', '#ffb347');
+
+    async function refreshHealth() {
+      try {
+        const health = await apiGet('/api/health', 10000);
+        renderHealth(health);
+      } catch (err) {
+        renderHealth({ api: 'err', db: 'err', lstm: 'err' });
+        setError(`Sağlık verisi alınamadı: ${err.message}`);
+      }
+    }
+
+    async function refreshStatsAndData() {
+      try {
+        const [stats, data] = await Promise.all([
+          apiGet('/api/stats'),
+          apiGet('/api/data')
+        ]);
+
+        lastSaltEl.textContent = fmt(stats.last_salt);
+        lastTempEl.textContent = fmt(stats.last_sicaklik);
+        totalCountEl.textContent = stats.total ?? 0;
+
+        const latest50 = [...data].reverse().slice(-50);
+        const labels = latest50.map((r) => new Date(r.timestamp).toLocaleTimeString('tr-TR'));
+        const salts = latest50.map((r) => Number(r.salt));
+        const temps = latest50.map((r) => Number(r.sicaklik));
+
+        saltChart.data.labels = labels;
+        saltChart.data.datasets[0].data = salts;
+        saltChart.update();
+
+        tempChart.data.labels = labels;
+        tempChart.data.datasets[0].data = temps;
+        tempChart.update();
+
+        const last20 = data.slice(0, 20);
+        tableBody.innerHTML = last20.map((row, index) => `
+          <tr>
+            <td>${index + 1}</td>
+            <td>${new Date(row.timestamp).toLocaleString('tr-TR')}</td>
+            <td>${fmt(row.salt)}</td>
+            <td>${fmt(row.sicaklik)}</td>
+          </tr>
+        `).join('');
+
+        setError('');
+      } catch (err) {
+        setError(`Veri alınamadı: ${err.message}`);
+      }
+    }
+
+    predictBtn.addEventListener('click', async () => {
+      predictBtn.disabled = true;
+      predictResultEl.textContent = 'Tahmin alınıyor...';
+      try {
+        const result = await apiGet('/api/predict', 45000);
+        if (result.error) {
+          predictResultEl.textContent = `Hata: ${result.error}`;
+        } else {
+          predictResultEl.textContent = `Tuz: ${fmt(result.predicted_salt)} ppt | Sıcaklık: ${fmt(result.predicted_sicaklik)} °C | ${result.timestamp}`;
+        }
+      } catch (err) {
+        predictResultEl.textContent = `Hata: ${err.message}`;
+      } finally {
+        predictBtn.disabled = false;
+      }
+    });
+
+    trainBtn.addEventListener('click', async () => {
+      trainBtn.disabled = true;
+      modelStatusEl.textContent = 'Eğitiliyor...';
+      trainResultEl.textContent = 'Eğitiliyor... (maks. 5 dk)';
+      try {
+        const result = await apiGet('/api/train', 300000);
+        if (result.error) {
+          trainResultEl.textContent = `Hata: ${result.error}`;
+          modelStatusEl.textContent = 'Hata';
+        } else {
+          trainResultEl.textContent = `Tamamlandı | loss: ${fmt(result.loss, 6)} | kayıt: ${result.data_count}`;
+          modelStatusEl.textContent = 'Hazır';
+        }
+      } catch (err) {
+        trainResultEl.textContent = `Hata: ${err.message}`;
+        modelStatusEl.textContent = 'Hata';
+      } finally {
+        trainBtn.disabled = false;
+      }
+    });
+
+    csvBtn.addEventListener('click', () => {
+      window.open(`${BASE_URL}/api/export`, '_blank');
+    });
+
+    async function bootstrap() {
+      await Promise.all([refreshHealth(), refreshStatsAndData()]);
+      setInterval(refreshHealth, 30000);
+      setInterval(refreshStatsAndData, 30000);
+    }
+
+    bootstrap();
+  </script>
+</body>
+</html>
