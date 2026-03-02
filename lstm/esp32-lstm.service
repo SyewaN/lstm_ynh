@@ -1,5 +1,5 @@
 [Unit]
-Description=ESP32 LSTM Tahmin Servisi
+Description=ESP32 LSTM Servisi
 After=network.target mysql.service
 
 [Service]
@@ -8,9 +8,13 @@ User=www-data
 WorkingDirectory=/var/www/esp32monitor/lstm
 Environment="DB_HOST=localhost"
 Environment="DB_USER=esp32user"
-Environment="DB_PASSWORD=ESP32_SIFRE_BURAYA"
+Environment="DB_PASSWORD=Esp32Pass123!"
 Environment="DB_NAME=esp32monitor"
-ExecStart=/var/www/esp32monitor/lstm/venv/bin/gunicorn --workers 1 --bind 127.0.0.1:5001 --timeout 300 app:app
+ExecStart=/var/www/esp32monitor/lstm/venv/bin/gunicorn \
+  --workers 1 \
+  --bind 127.0.0.1:5001 \
+  --timeout 300 \
+  app:app
 Restart=always
 RestartSec=5
 

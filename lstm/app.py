@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from pathlib import Path
 
 import joblib
 import mysql.connector
@@ -12,24 +12,21 @@ from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.models import Sequential, load_model
 
 app = Flask(__name__)
-# Tüm originler için CORS açık.
 CORS(app)
 
-DB_HOST = os.environ.get('DB_HOST', 'localhost')
-DB_USER = os.environ.get('DB_USER', 'esp32user')
-DB_PASSWORD = os.environ.get('DB_PASSWORD', '')
-DB_NAME = os.environ.get('DB_NAME', 'esp32monitor')
+DB_HOST = os.environ.get("DB_HOST", "localhost")
+DB_USER = os.environ.get("DB_USER", "esp32user")
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
+DB_NAME = os.environ.get("DB_NAME", "esp32monitor")
 
-MODEL_DIR = '/var/www/esp32monitor/lstm/models/'
-MODEL_PATH = MODEL_DIR + 'model.h5'
-SCALER_PATH = MODEL_DIR + 'scaler.pkl'
+MODEL_DIR = Path("/var/www/esp32monitor/lstm/models/")
 SEQUENCE_LENGTH = 10
+MODEL_PATH = MODEL_DIR / "model.h5"
+SCALER_PATH = MODEL_DIR / "scaler.pkl"
 
-# Model klasörü yoksa oluştur.
-os.makedirs(MODEL_DIR, exist_ok=True)
 
-
-def get_db_connection():
+def get_connection():
+    # Her islem icin yeni baglanti acilarak servis kararliligi korunur.
     return mysql.connector.connect(
         host=DB_HOST,
         user=DB_USER,
@@ -38,141 +35,140 @@ def get_db_connection():
     )
 
 
-def build_lstm_model():
-    # İki özellikli (salt, sicaklik) zaman serisi için LSTM mimarisi.
-    model = Sequential(
-        [
-            LSTM(64, return_sequences=True, input_shape=(SEQUENCE_LENGTH, 2)),
-            Dropout(0.2),
-            LSTM(32),
-            Dropout(0.2),
-            Dense(2),
-        ]
-    )
-    model.compile(optimizer='adam', loss='mse')
-    return model
+def create_sequences(values, seq_length):
+    x_data, y_data = [], []
+    for i in range(seq_length, len(values)):
+        x_data.append(values[i - seq_length : i])
+        y_data.append(values[i])
+    return np.array(x_data), np.array(y_data)
 
 
-def create_sequences(data, sequence_length):
-    X, y = [], []
-    for i in range(sequence_length, len(data)):
-        X.append(data[i - sequence_length : i])
-        y.append(data[i])
-    return np.array(X), np.array(y)
-
-
-@app.get('/health')
+@app.route("/health", methods=["GET"])
 def health():
     try:
-        return jsonify({'status': 'ok'})
+        return jsonify({"status": "ok"})
     except Exception as exc:
-        return jsonify({'error': 'Sağlık kontrolü başarısız', 'detail': str(exc)}), 500
+        return jsonify({"error": f"Saglik kontrolu hatasi: {str(exc)}"}), 500
 
 
-@app.get('/train')
+@app.route("/train", methods=["GET"])
 def train():
     conn = None
     cursor = None
+
     try:
-        conn = get_db_connection()
+        MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+        conn = get_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute('SELECT salt, sicaklik FROM sensor_data ORDER BY timestamp ASC')
+        cursor.execute(
+            "SELECT salt, sicaklik FROM sensor_data ORDER BY timestamp ASC, id ASC"
+        )
         rows = cursor.fetchall()
 
         data_count = len(rows)
         if data_count < 50:
-            return jsonify({'error': 'Yetersiz veri', 'count': data_count}), 400
+            return jsonify({"error": "Yetersiz veri", "count": data_count}), 400
 
-        df = pd.DataFrame(rows)
-        values = df[['salt', 'sicaklik']].astype(float).values
+        df = pd.DataFrame(rows, columns=["salt", "sicaklik"])
+        values = df[["salt", "sicaklik"]].astype("float32").values
 
         scaler = MinMaxScaler()
         scaled_values = scaler.fit_transform(values)
 
-        X, y = create_sequences(scaled_values, SEQUENCE_LENGTH)
-        if len(X) == 0:
-            return jsonify({'error': 'Sequence oluşturulamadı', 'count': data_count}), 400
+        x_train, y_train = create_sequences(scaled_values, SEQUENCE_LENGTH)
+        if len(x_train) == 0:
+            return jsonify({"error": "Egitim dizisi olusturulamadi", "count": data_count}), 400
 
-        model = build_lstm_model()
-        history = model.fit(X, y, epochs=50, batch_size=16, verbose=0)
+        model = Sequential(
+            [
+                LSTM(64, return_sequences=True, input_shape=(SEQUENCE_LENGTH, 2)),
+                Dropout(0.2),
+                LSTM(32),
+                Dropout(0.2),
+                Dense(2),
+            ]
+        )
+        model.compile(optimizer="adam", loss="mse")
+
+        history = model.fit(x_train, y_train, epochs=50, batch_size=16, verbose=0)
 
         model.save(MODEL_PATH)
         joblib.dump(scaler, SCALER_PATH)
 
-        final_loss = float(history.history['loss'][-1])
+        final_loss = float(history.history["loss"][-1])
         return jsonify(
             {
-                'status': 'ok',
-                'loss': final_loss,
-                'data_count': data_count,
-                'epochs': 50,
+                "status": "ok",
+                "loss": final_loss,
+                "data_count": data_count,
             }
         )
     except Exception as exc:
-        return jsonify({'error': 'Model eğitimi başarısız', 'detail': str(exc)}), 500
+        return jsonify({"error": f"Model egitimi sirasinda hata: {str(exc)}"}), 500
     finally:
-        if cursor:
+        if cursor is not None:
             cursor.close()
-        if conn:
+        if conn is not None and conn.is_connected():
             conn.close()
 
 
-@app.get('/predict')
+@app.route("/predict", methods=["GET"])
 def predict():
     conn = None
     cursor = None
+
     try:
-        if not os.path.exists(MODEL_PATH) or not os.path.exists(SCALER_PATH):
-            return jsonify({'error': 'Model henüz eğitilmedi'}), 400
+        if not MODEL_PATH.exists() or not SCALER_PATH.exists():
+            return jsonify({"error": "Model henüz eğitilmedi"}), 400
 
-        model = load_model(MODEL_PATH)
-        scaler = joblib.load(SCALER_PATH)
-
-        conn = get_db_connection()
+        conn = get_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
-            'SELECT salt, sicaklik FROM sensor_data ORDER BY timestamp DESC LIMIT 10'
+            "SELECT salt, sicaklik FROM sensor_data ORDER BY timestamp DESC, id DESC LIMIT %s",
+            (SEQUENCE_LENGTH,),
         )
         rows = cursor.fetchall()
 
-        if len(rows) < 10:
-            return jsonify({'error': 'Tahmin için en az 10 kayıt gerekli', 'count': len(rows)}), 400
+        if len(rows) < SEQUENCE_LENGTH:
+            return jsonify({"error": "Tahmin için yeterli veri yok", "count": len(rows)}), 400
 
-        # DESC gelen veriyi kronolojik sıraya çevir.
         rows.reverse()
+        df = pd.DataFrame(rows, columns=["salt", "sicaklik"])
+        values = df[["salt", "sicaklik"]].astype("float32").values
 
-        values = np.array([[float(r['salt']), float(r['sicaklik'])] for r in rows])
+        scaler = joblib.load(SCALER_PATH)
+        model = load_model(MODEL_PATH)
+
         scaled_values = scaler.transform(values)
-        X_input = scaled_values.reshape(1, SEQUENCE_LENGTH, 2)
+        x_input = np.expand_dims(scaled_values, axis=0)
 
-        predicted_scaled = model.predict(X_input, verbose=0)
-        predicted_values = scaler.inverse_transform(predicted_scaled)[0]
+        pred_scaled = model.predict(x_input, verbose=0)
+        pred = scaler.inverse_transform(pred_scaled)
 
-        predicted_salt = float(predicted_values[0])
-        predicted_sicaklik = float(predicted_values[1])
-        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        predicted_salt = float(pred[0][0])
+        predicted_sicaklik = float(pred[0][1])
 
         cursor.execute(
-            'INSERT INTO predictions (predicted_salt, predicted_sicaklik) VALUES (%s, %s)',
+            "INSERT INTO predictions (predicted_salt, predicted_sicaklik) VALUES (%s, %s)",
             (predicted_salt, predicted_sicaklik),
         )
         conn.commit()
 
         return jsonify(
             {
-                'predicted_salt': round(predicted_salt, 2),
-                'predicted_sicaklik': round(predicted_sicaklik, 2),
-                'timestamp': now_str,
+                "predicted_salt": round(predicted_salt, 2),
+                "predicted_sicaklik": round(predicted_sicaklik, 2),
             }
         )
     except Exception as exc:
-        return jsonify({'error': 'Tahmin başarısız', 'detail': str(exc)}), 500
+        return jsonify({"error": f"Tahmin sirasinda hata: {str(exc)}"}), 500
     finally:
-        if cursor:
+        if cursor is not None:
             cursor.close()
-        if conn:
+        if conn is not None and conn.is_connected():
             conn.close()
 
 
-if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=5001, debug=False)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5001)
